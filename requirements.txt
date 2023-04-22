@@ -1,1 +1,2 @@
 alpaca_trade_api==3.0.0
+selenium==4.9.0
