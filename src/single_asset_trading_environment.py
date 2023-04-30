@@ -186,7 +186,6 @@ class SingleAssetTradingEnvironment(gym.Env):
 
             if self.current_step != self.window_size:
                 self._update_observation_agent_states()
-
             observation = np.append(market_states_observation, self.observation_agent_states, axis=1)
 
         else:
