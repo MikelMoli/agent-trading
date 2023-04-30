@@ -3,7 +3,7 @@ import gymnasium as gym
 import pandas as pd
 import numpy as np
 
-from typing import Tuple
+from typing import Tuple, Optional
 from gymnasium.spaces import Discrete, Box
 
 
@@ -13,13 +13,13 @@ class SingleAssetTradingEnvironment(gym.Env):
     def __init__(self, config: dict):
         super(SingleAssetTradingEnvironment, self).__init__()
 
-        self.df = config["df"]
+        self.df = pd.read_csv(config["data_path"])[["open","high","close","min"]]
         self.initial_account_balance = config["initial_account_balance"]
         self.window_size = config["window_size"]
         self.account_balance = config["initial_account_balance"]
+        self.accumulated_returns = 0
         self.trade_commission = 0.001
         self.normalization_factor = 999999999
-        self.accumulated_returns = 0
         self.entry_price = None
 
         self.positions = {
@@ -40,7 +40,9 @@ class SingleAssetTradingEnvironment(gym.Env):
         self.action_space = Discrete(len(list(self.actions.keys())))
         self.observation_space = self._define_observation_space()
 
-    def reset(self) -> np.array:
+    def reset(self, seed: Optional[int] = 42, options: Optional[dict] = None) -> Tuple[np.array, dict]:
+        super().reset(seed=seed)
+
         self.current_position = self.positions["FLAT"]
         self.current_action = self.actions["HOLD"]
         self.account_balance = self.initial_account_balance
@@ -49,7 +51,9 @@ class SingleAssetTradingEnvironment(gym.Env):
         self.entry_price = None
         self.timestamp_reward = 0
 
-        return self._next_observation()
+        info = {}
+        
+        return self._next_observation(), info
     
     def _define_observation_space(self) -> gym.spaces.Box:
         low_agent_state = np.array([[0, 0, -np.inf] for _ in range(self.window_size)]) #position, action and account balance low observations
@@ -64,25 +68,22 @@ class SingleAssetTradingEnvironment(gym.Env):
         return Box(low=low_bound_observation_space, high=high_bound_observation_space, shape=(self.window_size, low_bound_observation_space.shape[1]))
 
     def _initialize_observation_agent_states(self) -> np.array:
-        account_balances = [self.account_balance / self.normalization_factor] * self.window_size
-        current_actions = [self.current_action] * self.window_size
-        current_positions = [self.current_position] * self.window_size
+        agent_states = [[self.current_position, self.current_action, self.account_balance]] * self.window_size
+        return np.array(agent_states) / self.normalization_factor
 
-        return np.array([account_balances, current_actions, current_positions]).T
-
-    def _update_observation_agent_states(self):
-        current_agent_state = np.array([[self.current_position], [self.current_action], [self.account_balance / self.normalization_factor]]).T
+    def _update_observation_agent_states(self) -> None:
+        current_agent_state = np.array([[self.current_position, self.current_action, self.account_balance]]) / self.normalization_factor
         self.observation_agent_states = np.concatenate((self.observation_agent_states[1:,:], current_agent_state), axis=0)
 
     def _get_observation_market_states(self) -> np.array:
         market_states = np.array([
-            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'open'].values / self.normalization_factor,
-            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'high'].values / self.normalization_factor,
-            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'min'].values / self.normalization_factor,
-            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'close'].values / self.normalization_factor
+            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'open'].values,
+            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'high'].values,
+            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'min'].values,
+            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'close'].values
         ])
 
-        return market_states.T
+        return market_states.T / self.normalization_factor
 
     def _calculate_trade_profit(self, current_price: float) -> float:
         if self.current_position == 0:
@@ -150,26 +151,25 @@ class SingleAssetTradingEnvironment(gym.Env):
             elif action == 2: #esto siginifica que decido no hacer nada (HOLD) por lo que sigo en la posicion FLAT observando el mercado
                 self.current_action = self.actions["HOLD"]
 
-    def step(self, action: int) -> Tuple[pd.DataFrame, float, bool, dict]:
+    def step(self, action: int) -> Tuple[pd.DataFrame, float, bool, bool, dict]:
         self._take_action(action)
-
         self.current_step += 1
-
-        if self.account_balance <= 0:
-            done = True
-        else:
-            done = False
-
         observation = self._next_observation()
 
-        if observation is None:
-            done = True
-        
-        info = {}
+        if self.account_balance <= 0 or observation is None:
+            terminated = True
+        else:
+            terminated = False
 
-        return observation, self.timestamp_reward, done, info
+        info = {
+            "ACCOUNT BALANCE": self.account_balance,
+            "ACCUMULATED RETURNS": self.accumulated_returns
+        }
+        print(info)
 
-    def render(self, mode="human"):
+        return observation, self.timestamp_reward, terminated, False, info
+
+    def render(self, mode="human") -> None:
         if mode == "human":
             print("----------------------------------------------------")
             print(f"ACCOUNT BALANCE: {self.account_balance}")
@@ -180,7 +180,7 @@ class SingleAssetTradingEnvironment(gym.Env):
         else:
             pass
 
-    def _next_observation(self):
+    def _next_observation(self) -> np.array:
         market_states_observation = self._get_observation_market_states()
         if market_states_observation.shape[0] == self.window_size:
 
