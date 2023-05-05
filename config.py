@@ -83,7 +83,7 @@ VALID_CURRENCY_PAIRS = ["EURUSD",
                         "AUDNZD"
 ]
 
-YEARS_TO_EXTRACT = 5
+YEARS_TO_EXTRACT = 13
 
 # PATHS
 

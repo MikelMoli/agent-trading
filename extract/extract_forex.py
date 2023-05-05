@@ -5,8 +5,9 @@ sys.path.append(os.path.join(os.getcwd()))
 from time import sleep
 
 import pandas as pd
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium import webdriver
-from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException
 
@@ -25,21 +26,23 @@ class ExtractForex:
         today = datetime.today()
         self._current_year = today.year
         self._current_month = today.month
-        self._driver = ExtractForex.get_driver()
+        self._driver = self.get_driver()
 
         if years_to_extract is None:
             years_to_extract = config.YEARS_TO_EXTRACT
         self._years_to_extract = years_to_extract
 
-    @staticmethod
-    def get_driver():
-        service = Service(executable_path='driver/geckodriver.exe', log_path='NUL')
-        options = webdriver.FirefoxOptions()
+    def get_driver(self):
+        service = ChromeService(ChromeDriverManager().install())
+        prefs = {"download.default_directory" : f"{os.path.join(os.getcwd(), 'data')}"}
+
+        options = webdriver.ChromeOptions()
         options.headless = True
-        options.set_preference("browser.download.folderList", 2)
-        options.set_preference("browser.download.manager.showWhenStarting", False)
-        options.set_preference("browser.download.dir", f"{os.path.join(os.getcwd(), 'data')}")
-        return webdriver.Firefox(service = service, options=options)
+        options.add_argument("--browser.download.folderList=2")
+        options.add_argument("--browser.download.manager.showWhenStarting=False")
+        options.add_experimental_option("prefs", prefs)
+
+        return webdriver.Chrome(service=service, options=options)
 
     def _download_zip_data(self):
         urls = self.get_url_list()
@@ -63,21 +66,49 @@ class ExtractForex:
             else:
                 elems[0].click()
                 sleep(2)
+    
+    def _fix_bad_zip_file(self, filepath):
+        f = open(filepath, 'r+b')  
+        data = f.read()  
+        pos = data.find('\x50\x4b\x05\x06')
+        if (pos > 0):  
+            f.seek(pos + 22)
+            f.truncate()  
+            f.close()  
+        else:
+            raise Exception()
+            # raise error, file is truncated  
 
-    @staticmethod
-    def _extract_zips_into_folders():
+
+    def _handle_bad_zip_files(self, filepath):
+        parts = filepath.split(".")
+        if parts[-1] != "zip":
+            new_filepath = ""
+            for part in parts[:-1]:
+                if part == "zip":
+                    new_filepath += f".{part}"
+                else:
+                    new_filepath += part
+            os.rename(filepath, new_filepath)
+            self._fix_bad_zip_file(new_filepath)
+
+            return new_filepath
+        else:
+            return filepath
+
+    def _extract_zips_into_folders(self):
         for file in os.listdir(config.DATA_FOLDER_PATH):
             if '.zip' in file:
                 folder_name = file.split('M1')[1][0:4]
-                folder = ExtractForex.create_folder_if_not_exists(folder_name)
+                folder = self.create_folder_if_not_exists(folder_name)
                 filepath = f'{config.DATA_FOLDER_PATH}/{file}'
+                filepath = self._handle_bad_zip_files(filepath)
 
                 with zipfile.ZipFile(filepath, 'r') as zip_ref:
                     zip_ref.extractall(folder)
                     os.remove(filepath)
 
-    @staticmethod
-    def create_folder_if_not_exists(year: str):
+    def create_folder_if_not_exists(self, year: str):
         folder_path = f'{config.DATA_FOLDER_PATH}/{year}'
         if year not in os.listdir(os.path.join(os.getcwd(), 'data')):
             os.mkdir(folder_path)
@@ -101,7 +132,7 @@ class ExtractForex:
 
     def _merge_data(self):
         final_folder_name = 'merged'
-        merged_path = ExtractForex.create_folder_if_not_exists(final_folder_name)
+        merged_path = self.create_folder_if_not_exists(final_folder_name)
         folders = os.listdir(config.DATA_FOLDER_PATH)
         final_df = pd.DataFrame()
 
@@ -111,10 +142,10 @@ class ExtractForex:
                 for file in folder_files:
                     if '.csv' in file:
                         aux_df = pd.read_csv(os.path.join(config.DATA_FOLDER_PATH, folder, file), header=None)
-                        aux_df.columns = ['date', 'hour', 'open', 'high', 'close', 'min', 'volumen']
+                        aux_df.columns = ['date', 'hour', 'open', 'high', 'close', 'low', 'volume']
                         final_df = pd.concat([final_df, aux_df], axis=0, ignore_index=True)
 
-        final_df.drop(['volumen'], axis=1, inplace=True)  # Sólo hay 0s en la columna, no aporta nada
+        final_df.drop(['volume'], axis=1, inplace=True)  # Sólo hay 0s en la columna, no aporta nada
         final_df.to_csv(f'{merged_path}/merged_data.csv', index=False)
 
     def run(self):
@@ -126,5 +157,3 @@ class ExtractForex:
 if __name__ == '__main__':
     exfor = ExtractForex(currency='EURUSD')
     exfor.run()
-
-
