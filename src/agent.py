@@ -35,14 +35,18 @@ def get_rl_model(algo, rllib_config, env):
 if __name__ == "__main__":
     ray.init()
     data_path = os.path.abspath("../data/merged/cleaned_1_H_merged_data.csv")
-    import pandas as pd
-
     initial_account_balance = 10000
     window_size = 50
+    reward_window = 24
+    reward_method = "simple-profit"
+    unavailable_action_penalization_reward = -1
     env_config = {
         "data_path": data_path,
-        "initial_account_balance": 10000,
-        "window_size": window_size
+        "initial_account_balance": initial_account_balance,
+        "window_size": window_size,
+        "reward_window": reward_window,
+        "reward_method": reward_method,
+        "unavailable_action_penalization_reward": unavailable_action_penalization_reward
     }
 
     # este modelo tiene esta estructura -> LSTM(256) -> FC(256) + RELU -> FC(128) + RELU -> FC(64) + RELU -> FC(3)

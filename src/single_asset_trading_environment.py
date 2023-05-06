@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 
 from typing import Tuple, Optional
 from gymnasium.spaces import Discrete, Box
+from rewards.calculate_simple_profit_reward import calculate_simple_profit_reward
 
 
 class SingleAssetTradingEnvironment(gym.Env):
@@ -14,10 +15,13 @@ class SingleAssetTradingEnvironment(gym.Env):
     def __init__(self, config: dict):
         super(SingleAssetTradingEnvironment, self).__init__()
 
-        self.df = pd.read_csv(config["data_path"])[["open","high","close","min"]]
+        self.df = pd.read_csv(config["data_path"])[["open","high","close","low"]]
         self.initial_account_balance = config["initial_account_balance"]
         self.window_size = config["window_size"]
         self.account_balance = config["initial_account_balance"]
+        self.reward_window = config["reward_window"]
+        self.reward_method = config["reward_method"]
+        self.unavailable_action_penalization_reward = config["unavailable_action_penalization_reward"]
         self.total_returns = 0
         self.trade_commission = 0.001
         self.normalization_factor = 999999
@@ -34,11 +38,10 @@ class SingleAssetTradingEnvironment(gym.Env):
         }
         self.current_position = self.positions["FLAT"]
         self.current_action = self.actions["HOLD"]
-        self.trading_history = {}
         self.total_rewards = 0
         self.timestamp_reward = 0
 
-        self._initialize_trading_history()
+        self.trading_history = self._initialize_trading_history()
         self.observation_agent_states = self._initialize_observation_agent_states()
         self.action_space = Discrete(len(list(self.actions.keys())))
         self.observation_space = self._define_observation_space()
@@ -53,7 +56,7 @@ class SingleAssetTradingEnvironment(gym.Env):
         self.current_step = self.window_size
         self.total_rewards = 0
         self.timestamp_reward = 0
-        self._initialize_trading_history()
+        self.trading_history = self._initialize_trading_history()
 
         info = {
             "ACCOUNT BALANCE": self.account_balance,
@@ -90,7 +93,7 @@ class SingleAssetTradingEnvironment(gym.Env):
         market_states = np.array([
             self.df.loc[(self.current_step - self.window_size): (self.current_step), 'open'].values,
             self.df.loc[(self.current_step - self.window_size): (self.current_step), 'high'].values,
-            self.df.loc[(self.current_step - self.window_size): (self.current_step), 'min'].values,
+            self.df.loc[(self.current_step - self.window_size): (self.current_step), 'low'].values,
             self.df.loc[(self.current_step - self.window_size): (self.current_step), 'close'].values
         ])
 
@@ -98,7 +101,8 @@ class SingleAssetTradingEnvironment(gym.Env):
     
     def _take_action(self, action: int) -> None:
         #current_price = random.uniform(self.df.loc[self.current_step, "open"], self.df.loc[self.current_step, "close"]) #ESTO ES UNA EXAGERACIÓN PARA SIMULAR QUE EN LA PRACTICA NO ENTRAS JUSTO EN EL PRECIO DE OPEN NUNCA
-        current_price = self.df.loc[self.current_step, "close"]
+        #current_price = self.df.loc[self.current_step, "close"] #COGEMOS EL VALOR DEL CLOSE DIRECTAMENTE AUNQUE EN LA REALIDAD ES DIFICIL O IMPOSIBLE PILLAR JUSTO ESE VALOR
+        current_price = (self.df.loc[self.current_step, "open"] + self.df.loc[self.current_step, "close"]) / 2 #COGEMOS EL VALOR MEDIO ENTRE EL OPEN Y CLOSE PARA SIMULAR
 
         if len(self.trading_history["ACCOUNT_BALANCE"]) > 1:
 
@@ -129,8 +133,6 @@ class SingleAssetTradingEnvironment(gym.Env):
                     self.current_action = self.actions["HOLD"]
 
             elif self.current_position == 2: #FLAT
-                price_pct_change = (current_price - self.trading_history["PRICE"][-1]) / self.trading_history["PRICE"][-1]
-
                 if action == 0: #BUY
                     self.account_balance *= (1 - self.trade_commission)
                     self.current_action = self.actions["BUY"]
@@ -144,20 +146,24 @@ class SingleAssetTradingEnvironment(gym.Env):
 
         self.total_returns = (self.account_balance / self.initial_account_balance) - 1
         self._save_trading_history(current_price)
-
+        self._calculate_reward()
+    
+    def _calculate_reward(self) -> None:
         if len(self.trading_history["ACCOUNT_BALANCE"]) > 1:
-            window = 24 #X horas + la hora actual
             if self.current_position == 0 and self.current_action == 0:
-                self.timestamp_reward = -1
+                self.timestamp_reward = self.unavailable_action_penalization_reward
             elif self.current_position == 1 and self.current_action == 1:
-                self.timestamp_reward = -1
+                self.timestamp_reward = self.unavailable_action_penalization_reward
             else:
-                self.timestamp_reward = self.account_balance / self.trading_history["ACCOUNT_BALANCE"][-min(len(self.trading_history["ACCOUNT_BALANCE"]), window)] - 1.0
+                if self.reward_method == "simple-profit":
+                    self.timestamp_reward = calculate_simple_profit_reward(self.trading_history["ACCOUNT_BALANCE"], self.reward_window)
+                else:
+                    raise Exception(f"{self.reward_method} is not supported. Please, try another reward method.")
         else:
             self.timestamp_reward = 0.0
         
-    def _initialize_trading_history(self) -> None:
-        self.trading_history = {
+    def _initialize_trading_history(self) -> dict:
+        return {
             "ACCOUNT_BALANCE": [self.account_balance],
             "POSITION": [self.current_position],
             "ACTION": [self.current_action],

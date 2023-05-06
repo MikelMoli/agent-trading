@@ -19,7 +19,7 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values(by=["date"])
     df = df[(df["date"].dt.hour % 1 == 0) & (df["date"].dt.minute == 0)]    
-    df = df[["open", "high", "close", "min"]].reset_index()
+    df = df[["open", "high", "close", "low"]].reset_index()
 
     print("DATAFRAME HAS BEEN CLEANED.")
 
@@ -29,18 +29,24 @@ if __name__ == "__main__":
     #df = pd.read_csv("../data/merged/merged_data.csv")
     #df = clean_df(df)
     #df.to_csv("../data/merged/cleaned_1_H_merged_data.csv", index=False)
-    df = pd.read_csv("../data/merged/cleaned_1_H_merged_data.csv")[["open", "high", "close", "min"]]
+    df = pd.read_csv("../data/merged/cleaned_1_H_merged_data.csv")[["open", "high", "close", "low"]]
 
     data_path = os.path.abspath("../data/merged/cleaned_1_H_merged_data.csv")
     initial_account_balance = 10000
     window_size = 50
+    reward_window = 24
+    reward_method = "simple-profit"
+    unavailable_action_penalization_reward = -1
     epochs = 1
     episodes_per_epoch = df.shape[0] - (window_size + 1)
 
     env_config = {
         "data_path": data_path,
         "initial_account_balance": initial_account_balance,
-        "window_size": window_size
+        "window_size": window_size,
+        "reward_window": reward_window,
+        "reward_method": reward_method,
+        "unavailable_action_penalization_reward": unavailable_action_penalization_reward
     }
 
     env = SingleAssetTradingEnvironment(env_config)
