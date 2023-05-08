@@ -130,14 +130,9 @@ class SingleAssetTradingEnvironment(gym.Env):
         self.trading_history["PRICE"].append(current_price)
         self.trading_history["TOTAL_REWARDS"].append(self.total_rewards)
         self.trading_history["STEP"].append(self.current_step)
-        
+    
     def step(self, action: int) -> Tuple[pd.DataFrame, float, bool, bool, dict]:
-        current_state = self.action_method.take_action(self.df, self.trading_history, self.current_step, action)
-        self.current_account_balance = current_state["account_balance"]
-        self.total_returns = (self.current_account_balance / self.initial_account_balance) - 1
-        self.current_position = current_state["position"]
-        self.current_action = current_state["action"]
-        self.current_price = current_state["price"]
+        self.current_account_balance, self.current_action, self.current_position, self.current_price, self.total_returns = self.action_method.take_action(self.df, self.trading_history, self.current_step, action)
         self.timestamp_reward = self._calculate_reward()
         self.total_rewards += self.timestamp_reward
 
