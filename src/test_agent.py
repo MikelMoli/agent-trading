@@ -1,38 +1,12 @@
-import ray
 import os
-import math
+import ray
 
-
-from ray.rllib.algorithms import ppo, dqn, a3c, pg, ddpg, impala
-
+from ray.rllib.algorithms import ppo
 from single_asset_trading_environment import SingleAssetTradingEnvironment
 
-def get_rl_model(algo, rllib_config, env):
-    trainer = None
-    if algo == "PPO":
-        trainer = ppo.PPOTrainer(config=rllib_config, env=env)
-        print('trainer_default_config', trainer._default_config)
-    elif algo == "DQN":
-        trainer = dqn.DQNTrainer(config=rllib_config, env=env)
-    elif algo == "A2C":
-        trainer = a3c.A2CTrainer(config=rllib_config, env=env)
-    elif algo == "A3C":
-        trainer = a3c.A3CTrainer(config=rllib_config, env=env)
-    elif algo == "PG":
-        trainer = pg.PGTrainer(config=rllib_config, env=env)
-    elif algo == "DDPG":
-        trainer = ddpg.DDPGTrainer(config=rllib_config, env=env)
-    elif algo == "IMPALA":
-        trainer = impala.ImpalaTrainer(config=rllib_config, env=env)
-        print('trainer_default_config', trainer._default_config)
-    else:
-        assert algo in ("PPO", "DQN", "A2C", "A3C", "PG", "IMPALA")
-    return trainer
-
-
-if __name__ == "__main__":
+if __name__ == "__main__":    
     ray.init()
-    data_path = os.path.abspath("../data/merged/cleaned_1_H_merged_data.csv")
+    data_path = os.path.abspath("../data/merged/test_cleaned_1_H_merged_data.csv")
     initial_account_balance = 10000
     window_size = 50
     reward_window = 24
@@ -65,11 +39,11 @@ if __name__ == "__main__":
     )
     config = config.training(
         #lr=5e5,
-        #gamma=0.99,
+        #gamma=0.9,
         #lambda_=0.99,
         model=model,
         train_batch_size=4096,
-        sgd_minibatch_size=512
+        sgd_minibatch_size=256
     )
     config = config.rollouts(
         num_rollout_workers=1,
@@ -84,6 +58,8 @@ if __name__ == "__main__":
     )
 
     agent = config.build()
+    agent = agent.restore("checkpoints")
+
     episode = 0
     while True:
         result = agent.train()
