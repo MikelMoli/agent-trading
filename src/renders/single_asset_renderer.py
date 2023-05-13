@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from renders.render import Render
+from utils.single_asset_trading_utils import get_position_name, get_action_name
 
 class SingleAssetRenderer(Render):
     def __init__(self):
@@ -12,8 +13,8 @@ class SingleAssetRenderer(Render):
         print(f"ACCOUNT BALANCE: {trading_history['ACCOUNT_BALANCE'][-1]}")
         print(f"TOTAL RETURNS: {(trading_history['ACCOUNT_BALANCE'][-1] / trading_history['ACCOUNT_BALANCE'][0]) - 1.0}")
         print(f"TOTAL REWARDS: {trading_history['TOTAL_REWARDS'][-1]}")
-        print(f"AGENT POSITION: {self._get_position_name(trading_history['POSITION'][-1])}")
-        print(f"AGENT ACTION: {self._get_action_name(trading_history['ACTION'][-1])}")
+        print(f"AGENT POSITION: {get_position_name(trading_history['POSITION'][-1])}")
+        print(f"AGENT ACTION: {get_action_name(trading_history['ACTION'][-1])}")
         print(f"STEP: {trading_history['STEP'][-1]}")
         print("----------------------------------------------------")
         print()

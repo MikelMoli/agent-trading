@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
         if episode % 1000 == 0 and episode != 0:
             print(f"EPISODE={episode}")
-            env.render(mode="human")
+            env.render(mode="console")
         
         if terminated:
             break

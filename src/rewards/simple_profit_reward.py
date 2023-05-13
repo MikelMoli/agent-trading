@@ -4,6 +4,7 @@ from rewards.reward import Reward
 
 class SimpleProfitReward(Reward):
     def __init__(self, window: int):
+        super().__init__()
         self.window = window
 
     def calculate_reward(self, account_balance_history: List[float]) -> float:

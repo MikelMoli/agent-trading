@@ -7,6 +7,7 @@ from gymnasium.spaces import Discrete, Box
 from rewards.reward_generator_facade import RewardGeneratorFacade
 from actions.single_asset_discrete_full_action import SingleAssetDiscreteFullAction
 from renders.single_asset_renderer import SingleAssetRenderer
+from utils.single_asset_trading_utils import get_position_name, get_action_name
 
 class SingleAssetTradingEnvironment(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -149,30 +150,14 @@ class SingleAssetTradingEnvironment(gym.Env):
             "ACCOUNT BALANCE": self.current_account_balance,
             "TOTAL RETURNS": self.total_returns,
             "TOTAL REWARDS": self.total_rewards,
-            "AGENT POSITION": self._get_position_name(self.current_position),
-            "AGENT ACTION": self._get_action_name(self.current_action),
+            "AGENT POSITION": get_position_name(self.current_position),
+            "AGENT ACTION": get_action_name(self.current_action),
             "STEP": self.current_step
         }
         #if self.current_step % 5000 == 0:
-        print(info)
+        #print(info)
 
         return observation, self.timestamp_reward, terminated, False, info
-    
-    def _get_action_name(self, action: int) -> str:
-        if action == 0:
-            return "BUY"
-        elif action == 1:
-            return "SELL"
-        elif action == 2:
-            return "HOLD"
-    
-    def _get_position_name(self, position: int) -> str:
-        if position == 0:
-            return "LONG"
-        elif position == 1:
-            return "SHORT"
-        elif position == 2:
-            return "FLAT"
 
     def render(self, mode="console") -> None:
         self.renderer.render(mode, self.trading_history)
