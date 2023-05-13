@@ -5,7 +5,7 @@ import math
 
 from ray.rllib.algorithms import ppo, dqn, a3c, pg, ddpg, impala
 
-from single_asset_trading_environment import SingleAssetTradingEnvironment
+from environments.single_asset_trading_environment import SingleAssetTradingEnvironment
 
 def get_rl_model(algo, rllib_config, env):
     trainer = None
@@ -91,7 +91,7 @@ if __name__ == "__main__":
             episode += 1
             print(f"EPISODE={episode}")
             print(f'episode_reward_mean: {result["episode_reward_mean"]}')
-            agent.save('checkpoints')
+            agent.save('../checkpoints')
 
         if episode == 100 or result["episode_reward_mean"] >= 2:
             break

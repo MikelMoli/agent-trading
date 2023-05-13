@@ -1,8 +1,9 @@
 import os
+import math
 import ray
 
 from ray.rllib.algorithms import ppo
-from single_asset_trading_environment import SingleAssetTradingEnvironment
+from environments.single_asset_trading_environment import SingleAssetTradingEnvironment
 
 if __name__ == "__main__":    
     ray.init()
@@ -67,7 +68,7 @@ if __name__ == "__main__":
             episode += 1
             print(f"EPISODE={episode}")
             print(f'episode_reward_mean: {result["episode_reward_mean"]}')
-            agent.save('checkpoints')
+            agent.save('../checkpoints')
 
         if episode == 100 or result["episode_reward_mean"] >= 2:
             break

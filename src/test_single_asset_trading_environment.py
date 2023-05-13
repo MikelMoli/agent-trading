@@ -2,7 +2,7 @@ import os
 
 import pandas as pd
 
-from single_asset_trading_environment import SingleAssetTradingEnvironment
+from environments.single_asset_trading_environment import SingleAssetTradingEnvironment
 
 def create_datetime(row) -> pd.Series:
     date = row["date"]
