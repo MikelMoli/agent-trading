@@ -2,7 +2,7 @@ from typing import List
 
 from rewards.simple_profit_reward import SimpleProfitReward
 
-class RewardGeneratorFacade:
+class RewardGenerator:
     def __init__(self, reward_method: str, reward_window: int):
         self.reward_method = reward_method
         self.reward_window = reward_window

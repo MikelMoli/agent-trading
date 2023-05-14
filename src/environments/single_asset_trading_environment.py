@@ -1,15 +1,15 @@
-import gymnasium as gym
+import gymnasium
 import pandas as pd
 import numpy as np
 
 from typing import Tuple, List, Optional
 from gymnasium.spaces import Discrete, Box
-from rewards.reward_generator_facade import RewardGeneratorFacade
+from rewards.reward_generator import RewardGenerator
 from actions.single_asset_discrete_full_action import SingleAssetDiscreteFullAction
 from renders.single_asset_renderer import SingleAssetRenderer
 from utils.single_asset_trading_utils import get_position_name, get_action_name
 
-class SingleAssetTradingEnvironment(gym.Env):
+class SingleAssetTradingEnvironment(gymnasium.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self,
@@ -47,10 +47,10 @@ class SingleAssetTradingEnvironment(gym.Env):
         self.observation_space = self._define_observation_space()
 
         self.action_method = SingleAssetDiscreteFullAction(self.trade_commission)
-        self.reward_generator = RewardGeneratorFacade(config["reward_method"], config["reward_window"])
+        self.reward_generator = RewardGenerator(config["reward_method"], config["reward_window"])
         self.renderer = SingleAssetRenderer()
 
-    def reset(self, seed: Optional[int] = 42) -> Tuple[np.array, dict]:
+    def reset(self, seed: Optional[int] = 42, options: Optional[dict] = None) -> Tuple[np.array, dict]:
         super().reset(seed=seed)
 
         self.current_position = self.positions["FLAT"]
@@ -73,7 +73,7 @@ class SingleAssetTradingEnvironment(gym.Env):
         
         return self._next_observation(), info
     
-    def _define_observation_space(self) -> gym.spaces.Box:
+    def _define_observation_space(self) -> Box:
         low_agent_state = np.array([[0, 0, -np.inf] for _ in range(self.window_size + 1)]) #position, action and account balance low observations
         low_market_state = np.array([[-np.inf for _ in range(self.df.shape[1])] for _ in range(self.window_size + 1)]) #low for all asset features for window size + current position timesteps
 
@@ -86,8 +86,8 @@ class SingleAssetTradingEnvironment(gym.Env):
         return Box(low=low_bound_observation_space, high=high_bound_observation_space, shape=(self.window_size + 1, low_bound_observation_space.shape[1]))
 
     def _initialize_observation_agent_states(self) -> np.array:
-        agent_states = [[self.current_position, self.current_action, self.current_account_balance / self.normalization_factor]] * (self.window_size + 1)
-        return np.array(agent_states)
+        agent_states = np.array([[self.current_position, self.current_action, self.current_account_balance / self.normalization_factor]] * (self.window_size + 1))
+        return agent_states
 
     def _update_observation_agent_states(self) -> None:
         current_agent_state = np.array([[self.current_position, self.current_action, self.current_account_balance / self.normalization_factor]])
@@ -136,10 +136,8 @@ class SingleAssetTradingEnvironment(gym.Env):
         self.current_account_balance, self.current_action, self.current_position, self.current_price, self.total_returns = self.action_method.take_action(self.df, self.trading_history, self.current_step, action)
         self.timestamp_reward = self._calculate_reward()
         self.total_rewards += self.timestamp_reward
-
         self._save_trading_history(self.current_account_balance, self.current_position, self.current_action, self.current_price)
         observation = self._next_observation()
-
         self.current_step += 1
         if self.current_account_balance <= 0 or self.current_step == self.df.shape[0] - 1:
             terminated = True
@@ -154,8 +152,7 @@ class SingleAssetTradingEnvironment(gym.Env):
             "AGENT ACTION": get_action_name(self.current_action),
             "STEP": self.current_step
         }
-        #if self.current_step % 5000 == 0:
-        #print(info)
+        print(info)
 
         return observation, self.timestamp_reward, terminated, False, info
 

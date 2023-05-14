@@ -64,12 +64,12 @@ if __name__ == "__main__":
         env_config=env_config
     )
     config = config.training(
-        #lr=5e5,
+        lr=5e5,
         #gamma=0.99,
         #lambda_=0.99,
         model=model,
-        train_batch_size=4096,
-        sgd_minibatch_size=512
+        #train_batch_size=4096,
+        #sgd_minibatch_size=512
     )
     config = config.rollouts(
         num_rollout_workers=1,
@@ -78,9 +78,6 @@ if __name__ == "__main__":
     config = config.resources(
         num_gpus=0,
         num_learner_workers=1
-    )
-    config = config.reporting(
-        min_train_timesteps_per_iteration=0
     )
 
     agent = config.build()
