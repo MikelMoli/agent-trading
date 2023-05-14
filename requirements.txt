@@ -17,6 +17,9 @@ tensorboardX==2.6
 lz4==4.3.2
 tensorflow-probability==0.19.0
 
+#stable-baselines3
+stable-baselines3==1.8.0
+
 #extract
 selenium==4.9.0
 webdriver-manager==3.8.6
