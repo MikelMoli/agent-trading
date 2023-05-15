@@ -1,46 +1,97 @@
 import ray
 import os
+import math
 
-from ray import tune
-from ray.tune.registry import register_env
-from ray.tune.logger import TBXLoggerCallback
+
+from ray.rllib.algorithms import ppo, dqn, a3c, pg, ddpg, impala
+
+from ray.tune.logger import pretty_print
 
 from single_asset_trading_environment import SingleAssetTradingEnvironment
 
-def create_env(env_config):
-        return SingleAssetTradingEnvironment(env_config)
+def get_rl_model(algo, rllib_config, env):
+    trainer = None
+    if algo == "PPO":
+        trainer = ppo.PPOTrainer(config=rllib_config, env=env)
+        print('trainer_default_config', trainer._default_config)
+    elif algo == "DQN":
+        trainer = dqn.DQNTrainer(config=rllib_config, env=env)
+    elif algo == "A2C":
+        trainer = a3c.A2CTrainer(config=rllib_config, env=env)
+    elif algo == "A3C":
+        trainer = a3c.A3CTrainer(config=rllib_config, env=env)
+    elif algo == "PG":
+        trainer = pg.PGTrainer(config=rllib_config, env=env)
+    elif algo == "DDPG":
+        trainer = ddpg.DDPGTrainer(config=rllib_config, env=env)
+    elif algo == "IMPALA":
+        trainer = impala.ImpalaTrainer(config=rllib_config, env=env)
+        print('trainer_default_config', trainer._default_config)
+    else:
+        assert algo in ("PPO", "DQN", "A2C", "A3C", "PG", "IMPALA")
+    return trainer
+
 
 if __name__ == "__main__":
-    data_path = os.path.abspath("../data/merged/cleaned_1_H_merged_data.csv")
-    initial_account_balance = 10000
-    window_size = 5
-
     ray.init()
-    register_env("single-asset-trading-environment", create_env)
-    tune.run("PPO",
-             config = {
-                 "env": "single-asset-trading-environment",
-                 "framework": "torch",
-                 "num_workers": 1,
-                 "num_envs_per_worker": 1,
-                 "train_batch_size": 128, #esto indica cuantos episodios tiene un batch
-                 "batch_mode": "truncate_episodes", #esto asegura que los batches siempre tengan la misma cantidad de episodios
-                 "evaluation_interval": 10, #esto indica que el agente se evaluará cada 10 intervalos (cada intervalo es un batch con 128 episodios)
-                 "evaluation_num_episodes": 128 * 4, #esto indica que el agente se evaluará en 128 * 4 episodios (lo que es equivalente a 4 batches)
-                 "num_gpus": 0,
-                 "model": { # este modelo tiene esta estructura -> LSTM(64) -> FC(128) + RELU -> FC(64) + RELU -> FC(32) + RELU
-                    "fcnet_hiddens": [128, 64, 32],
-                    "fcnet_activation": "relu",
-                    "use_lstm": True,
-                    "lstm_cell_size": 64,
-                    },
-                 "env_config": {
-                    "data_path": data_path,
-                    "initial_account_balance": initial_account_balance,
-                    "window_size": window_size
-                }
-             },
-            checkpoint_at_end=True,
-            callbacks=[TBXLoggerCallback()],
-            local_dir=os.path.abspath("../agents_results/")
+    data_path = os.path.abspath("../data/merged/cleaned_1_H_merged_data.csv")
+    import pandas as pd
+
+    initial_account_balance = 10000
+    window_size = 50
+    env_config = {
+        "data_path": data_path,
+        "initial_account_balance": 10000,
+        "window_size": window_size
+    }
+
+    # este modelo tiene esta estructura -> LSTM(256) -> FC(256) + RELU -> FC(128) + RELU -> FC(64) + RELU -> FC(3)
+    model = {
+        "_disable_preprocessor_api": True, #teniendo esto, el input al modelo es tal cual lo que se observa desde el environment
+        "fcnet_hiddens": [128, 64, 32, 3],
+        "fcnet_activation": "relu",
+        "use_lstm": True,
+        "lstm_cell_size": 128,
+        "max_seq_len": window_size + 1,
+        "lstm_use_prev_action": True,
+        "lstm_use_prev_reward": True,
+    }
+    config = ppo.PPOConfig()
+    config = config.environment(
+        env=SingleAssetTradingEnvironment,
+        env_config=env_config
     )
+    config = config.training(
+        #lr=5e5,
+        #gamma=0.9,
+        #lambda_=0.99,
+        model=model,
+        train_batch_size=4096,
+        sgd_minibatch_size=256
+    )
+    config = config.rollouts(
+        num_rollout_workers=1,
+        rollout_fragment_length="auto"
+    )
+    config = config.resources(
+        num_gpus=0,
+        num_learner_workers=1
+    )
+    config = config.reporting(
+        min_train_timesteps_per_iteration=0
+    )
+
+    agent = config.build()
+    episode = 0
+    while True:
+        result = agent.train()
+        if not math.isnan(result["episode_reward_mean"]):
+            episode += 1
+            print(f"EPISODE={episode}")
+            print(f'episode_reward_mean: {result["episode_reward_mean"]}')
+        
+        if episode % 5 == 0:
+            agent.save('checkpoints')
+        if episode == 100 or result["episode_reward_mean"] == 10:
+            break
+        

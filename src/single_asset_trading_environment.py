@@ -2,6 +2,7 @@ import random
 import gymnasium as gym
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 from typing import Tuple, Optional
 from gymnasium.spaces import Discrete, Box
@@ -17,10 +18,9 @@ class SingleAssetTradingEnvironment(gym.Env):
         self.initial_account_balance = config["initial_account_balance"]
         self.window_size = config["window_size"]
         self.account_balance = config["initial_account_balance"]
-        self.accumulated_returns = 0
+        self.total_returns = 0
         self.trade_commission = 0.001
-        self.normalization_factor = 999999999
-        self.entry_price = None
+        self.normalization_factor = 999999
 
         self.positions = {
             "LONG": 0,
@@ -34,9 +34,12 @@ class SingleAssetTradingEnvironment(gym.Env):
         }
         self.current_position = self.positions["FLAT"]
         self.current_action = self.actions["HOLD"]
+        self.trading_history = {}
+        self.total_rewards = 0
         self.timestamp_reward = 0
-        self.observation_agent_states = self._initialize_observation_agent_states()
 
+        self._initialize_trading_history()
+        self.observation_agent_states = self._initialize_observation_agent_states()
         self.action_space = Discrete(len(list(self.actions.keys())))
         self.observation_space = self._define_observation_space()
 
@@ -46,150 +49,204 @@ class SingleAssetTradingEnvironment(gym.Env):
         self.current_position = self.positions["FLAT"]
         self.current_action = self.actions["HOLD"]
         self.account_balance = self.initial_account_balance
-        self.accumulated_returns = 0
+        self.total_returns = 0
         self.current_step = self.window_size
-        self.entry_price = None
+        self.total_rewards = 0
         self.timestamp_reward = 0
+        self._initialize_trading_history()
 
-        info = {}
+        info = {
+            "ACCOUNT BALANCE": self.account_balance,
+            "TOTAL RETURNS": self.total_returns,
+            "TOTAL REWARDS": self.total_rewards,
+            "AGENT POSITION": self.current_position,
+            "AGENT ACTION": self.current_action,
+            "STEP": self.current_step
+        }
         
         return self._next_observation(), info
     
     def _define_observation_space(self) -> gym.spaces.Box:
-        low_agent_state = np.array([[0, 0, -np.inf] for _ in range(self.window_size)]) #position, action and account balance low observations
-        low_market_state = np.array([[-np.inf for _ in range(self.df.shape[1])] for _ in range(self.window_size)]) #low for all asset features for window size timesteps
+        low_agent_state = np.array([[0, 0, -np.inf] for _ in range(self.window_size + 1)]) #position, action and account balance low observations
+        low_market_state = np.array([[-np.inf for _ in range(self.df.shape[1])] for _ in range(self.window_size + 1)]) #low for all asset features for window size + current position timesteps
 
-        high_agent_state = np.array([[2, 2, np.inf] for _ in range(self.window_size)]) #position, action and account balance high observations
-        high_market_state = np.array([[np.inf for _ in range(self.df.shape[1])] for _ in range(self.window_size)]) #high for all asset features for window size timesteps
+        high_agent_state = np.array([[2, 2, np.inf] for _ in range(self.window_size + 1)]) #position, action and account balance high observations
+        high_market_state = np.array([[np.inf for _ in range(self.df.shape[1])] for _ in range(self.window_size + 1)]) #high for all asset features for window size + current position timesteps
 
         low_bound_observation_space = np.concatenate((low_market_state, low_agent_state), axis=1) #concatenate low agent state and low market state arrays
         high_bound_observation_space = np.concatenate((high_market_state, high_agent_state), axis=1) #concatenate high agent state and low market state arrays
 
-        return Box(low=low_bound_observation_space, high=high_bound_observation_space, shape=(self.window_size, low_bound_observation_space.shape[1]))
+        return Box(low=low_bound_observation_space, high=high_bound_observation_space, shape=(self.window_size + 1, low_bound_observation_space.shape[1]))
 
     def _initialize_observation_agent_states(self) -> np.array:
-        agent_states = [[self.current_position, self.current_action, self.account_balance]] * self.window_size
-        return np.array(agent_states) / self.normalization_factor
+        agent_states = [[self.current_position, self.current_action, self.account_balance / self.normalization_factor]] * (self.window_size + 1)
+        return np.array(agent_states)
 
     def _update_observation_agent_states(self) -> None:
-        current_agent_state = np.array([[self.current_position, self.current_action, self.account_balance]]) / self.normalization_factor
+        current_agent_state = np.array([[self.current_position, self.current_action, self.account_balance / self.normalization_factor]])
         self.observation_agent_states = np.concatenate((self.observation_agent_states[1:,:], current_agent_state), axis=0)
 
     def _get_observation_market_states(self) -> np.array:
         market_states = np.array([
-            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'open'].values,
-            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'high'].values,
-            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'min'].values,
-            self.df.loc[self.current_step: self.current_step + self.window_size - 1, 'close'].values
+            self.df.loc[(self.current_step - self.window_size): (self.current_step), 'open'].values,
+            self.df.loc[(self.current_step - self.window_size): (self.current_step), 'high'].values,
+            self.df.loc[(self.current_step - self.window_size): (self.current_step), 'min'].values,
+            self.df.loc[(self.current_step - self.window_size): (self.current_step), 'close'].values
         ])
 
         return market_states.T / self.normalization_factor
-
-    def _calculate_trade_profit(self, current_price: float) -> float:
-        if self.current_position == 0:
-            trade_profit = ((current_price - self.entry_price) / self.entry_price) * (1 - self.trade_commission)
-        elif self.current_position == 1:
-            trade_profit = ((self.entry_price - current_price) / self.entry_price) * (1 - self.trade_commission)
-        else:
-            trade_profit = 0
-        
-        return trade_profit
     
     def _take_action(self, action: int) -> None:
-        current_price = random.uniform(self.df.loc[self.current_step, "open"], self.df.loc[self.current_step, "close"]) #ESTO ES UNA EXAGERACIÓN PARA SIMULAR QUE EN LA PRACTICA NO ENTRAS JUSTO EN EL PRECIO DE OPEN NUNCA
-        self.timestamp_reward = 0
+        #current_price = random.uniform(self.df.loc[self.current_step, "open"], self.df.loc[self.current_step, "close"]) #ESTO ES UNA EXAGERACIÓN PARA SIMULAR QUE EN LA PRACTICA NO ENTRAS JUSTO EN EL PRECIO DE OPEN NUNCA
+        current_price = self.df.loc[self.current_step, "close"]
 
-        if self.current_position == 0: #esto significa que la posicion es LONG por lo que puedo holdear (HOLD) o vender (SELL)
-            if action == 0: #esto significa que decido comprar (BUY) y es una accion que no se puede hacer porque ya he comprado con el 100% de mi patrimonio
+        if len(self.trading_history["ACCOUNT_BALANCE"]) > 1:
+
+            if self.current_position == 0: #LONG
+                price_pct_change = (current_price - self.trading_history["PRICE"][-1]) / self.trading_history["PRICE"][-1]
+
+                if action == 0: #BUY
+                    self.current_action = self.actions["BUY"]
+                elif action == 1: #SELL
+                    self.account_balance *= (1 + price_pct_change) * (1 - self.trade_commission)
+                    self.current_action = self.actions["SELL"]
+                    self.current_position = self.positions["FLAT"]
+                elif action == 2: #HOLD
+                    self.account_balance *= (1 + price_pct_change)
+                    self.current_action = self.actions["HOLD"]
+
+            elif self.current_position == 1: #SHORT
+                price_pct_change = (self.trading_history["PRICE"][-1] - current_price) / self.trading_history["PRICE"][-1]
+
+                if action == 0: #BUY
+                    self.account_balance *= (1 - price_pct_change) * (1 - self.trade_commission)
+                    self.current_action = self.actions["BUY"]
+                    self.current_position = self.positions["FLAT"]
+                elif action == 1: #SELL
+                    self.current_action = self.actions["SELL"]
+                elif action == 2: #HOLD
+                    self.account_balance *= (1 + price_pct_change)
+                    self.current_action = self.actions["HOLD"]
+
+            elif self.current_position == 2: #FLAT
+                price_pct_change = (current_price - self.trading_history["PRICE"][-1]) / self.trading_history["PRICE"][-1]
+
+                if action == 0: #BUY
+                    self.account_balance *= (1 - self.trade_commission)
+                    self.current_action = self.actions["BUY"]
+                    self.current_position = self.positions["LONG"]
+                elif action == 1: #SELL
+                    self.account_balance *= (1 - self.trade_commission)
+                    self.current_action = self.actions["SELL"]
+                    self.current_position = self.positions["SHORT"]
+                elif action == 2: #HOLD
+                    self.current_action = self.actions["HOLD"]
+
+        self.total_returns = (self.account_balance / self.initial_account_balance) - 1
+        self._save_trading_history(current_price)
+
+        if len(self.trading_history["ACCOUNT_BALANCE"]) > 1:
+            window = 24 #X horas + la hora actual
+            if self.current_position == 0 and self.current_action == 0:
                 self.timestamp_reward = -1
-            
-            elif action == 1: #esto significa que decido vender (SELL) por lo que paso a la posicion FLAT
-                self.current_action = self.actions["SELL"]
-                trade_profit = self._calculate_trade_profit(current_price) #CALCULO EL PROFIT DE MI TRADE DESCONTANDO LA COMISION
-                self.accumulated_returns += trade_profit
-                self.account_balance *= (1 + trade_profit)
-                self.current_position  = self.positions["FLAT"]
-
-                self.timestamp_reward = trade_profit
-            
-            elif action == 2: #esto significa que decido holdear (HOLD) por lo que me mantengo en la posicion LONG
-                pass
+            elif self.current_position == 1 and self.current_action == 1:
+                self.timestamp_reward = -1
+            else:
+                self.timestamp_reward = self.account_balance / self.trading_history["ACCOUNT_BALANCE"][-min(len(self.trading_history["ACCOUNT_BALANCE"]), window)] - 1.0
+        else:
+            self.timestamp_reward = 0.0
         
-        elif self.current_position == 1: #esto significa que la posicion es SHORT por lo que puedo holdear (HOLD) o vender (SELL)
-            if action == 0: #esto significa que decido comprar (BUY) pero es una accion que no puedo porque ya tengo el 100% de mi patrimonio invertido en posicion SHORT
-                self.timestamp_reward = -1
-            
-            elif action == 1: #esto significa que decido vender (SELL) por lo que paso a la posicion FLAT
-                self.current_action = self.actions["SELL"]
-                trade_profit = self._calculate_trade_profit(current_price) #CALCULO EL PROFIT DE MI TRADE DESCONTANDO LA COMISION
-                self.accumulated_returns += trade_profit
-                self.account_balance *= (1 + trade_profit)
-                self.current_position  = self.positions["FLAT"]
+    def _initialize_trading_history(self) -> None:
+        self.trading_history = {
+            "ACCOUNT_BALANCE": [self.account_balance],
+            "POSITION": [self.current_position],
+            "ACTION": [self.current_action],
+            "PRICE": [self.df["close"].iloc[0]]
+        }
 
-                self.timestamp_reward = trade_profit
-            
-            elif action == 2: # esto significa que decido holdear (HOLD) por lo que la posicion sigue siendo SHORT
-                self.current_action = self.actions["HOLD"]
-
-        elif self.current_position == 2: #esto significa que la posicion es FLAT por lo que puedo comprar (BUY), vender (SELL) o no hacer nada (HOLD)
-            if action == 0: #esto significa que decido comprar (BUY) por lo que entro en la posicion LONG
-                self.current_action = self.actions["BUY"]
-                updated_account_balance = (self.account_balance * (1 - self.trade_commission)) #APLICO LA COMISION A MI PATRIMONIO POR HABER COMPRADO
-                self.accumulated_returns -= self.trade_commission
-                self.account_balance = updated_account_balance
-                self.entry_price = current_price
-                self.current_position = self.positions["LONG"]
-
-            elif action == 1: #esto significa que decido vender (SELL) por lo que entro en la posicion SHORT
-                self.current_action = self.actions["SELL"]
-                updated_account_balance = (self.account_balance * (1 - self.trade_commission)) #APLICO LA COMISION A MI PATRIMONIO POR HABER COMPRADO
-                self.accumulated_returns -= self.trade_commission
-                self.account_balance = updated_account_balance
-                self.entry_price = current_price
-                self.current_position = self.positions["SHORT"]
-
-            elif action == 2: #esto siginifica que decido no hacer nada (HOLD) por lo que sigo en la posicion FLAT observando el mercado
-                self.current_action = self.actions["HOLD"]
-
+    def _save_trading_history(self, current_price) -> None:
+        self.trading_history["ACCOUNT_BALANCE"].append(self.account_balance)
+        self.trading_history["POSITION"].append(self.current_position)
+        self.trading_history["ACTION"].append(self.current_action)
+        self.trading_history["PRICE"].append(current_price)
+        
     def step(self, action: int) -> Tuple[pd.DataFrame, float, bool, bool, dict]:
         self._take_action(action)
-        self.current_step += 1
+        self.total_rewards += self.timestamp_reward
         observation = self._next_observation()
 
-        if self.account_balance <= 0 or observation is None:
+        self.current_step += 1
+
+        if self.account_balance <= 0 or self.current_step == self.df.shape[0] - 1:
             terminated = True
         else:
             terminated = False
 
         info = {
             "ACCOUNT BALANCE": self.account_balance,
-            "ACCUMULATED RETURNS": self.accumulated_returns
+            "TOTAL RETURNS": self.total_returns,
+            "TOTAL REWARDS": self.total_rewards,
+            "AGENT POSITION": self._get_position_name(),
+            "AGENT ACTION": self._get_action_name(),
+            "STEP": self.current_step
         }
+        #if self.current_step % 5000 == 0:
         print(info)
 
         return observation, self.timestamp_reward, terminated, False, info
+    
+    def _get_action_name(self) -> str:
+        if self.current_action == 0:
+            return "BUY"
+        elif self.current_action == 1:
+            return "SELL"
+        elif self.current_action == 2:
+            return "HOLD"
+    
+    def _get_position_name(self) -> str:
+        if self.current_position == 0:
+            return "LONG"
+        elif self.current_position == 1:
+            return "SHORT"
+        elif self.current_position == 2:
+            return "FLAT"
 
-    def render(self, mode="human") -> None:
-        if mode == "human":
+    def render(self, mode="console") -> None:
+        if mode == "console":
             print("----------------------------------------------------")
             print(f"ACCOUNT BALANCE: {self.account_balance}")
-            print(f"ACCUMULATED RETURNS: {self.accumulated_returns}")
+            print(f"TOTAL RETURNS: {self.total_returns}")
+            print(f"TOTAL REWARDS: {self.total_rewards}")
+            print(f"AGENT POSITION: {self._get_position_name()}")
+            print(f"AGENT ACTION: {self._get_action_name()}")
+            print(f"STEP: {self.current_step}")
             print("----------------------------------------------------")
             print()
             print()
-        else:
-            pass
+        elif mode == "human":
+            percentage_total_returns = np.round(self.total_returns, 4) * 100
+            buy_actions = [i for i in range(len(self.trading_history["ACTION"])) if self.trading_history["ACTION"][i] == 0]
+            sell_actions = [i for i in range(len(self.trading_history["ACTION"])) if self.trading_history["ACTION"][i] == 1]
+
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20,10))
+
+            ax1.set_title(f"ACCOUNT BALANCE HISTORY | RETURNS {percentage_total_returns}%", fontsize=14)
+            ax1.plot(self.trading_history["ACCOUNT_BALANCE"])
+            ax1.legend(["ACCOUNT BALANCE"])
+            ax1.grid()
+            
+            ax2.set_title(f"AGENT TRADING HISTORY | RETURNS {percentage_total_returns}%", fontsize=14)
+            ax2.plot(self.trading_history["PRICE"])
+            ax2.scatter(x=buy_actions, y=np.array(self.trading_history["PRICE"])[buy_actions], marker="^", color="green")
+            ax2.scatter(x=sell_actions, y=np.array(self.trading_history["PRICE"])[sell_actions], marker="v", color="red")
+            ax2.legend(["ASSET PRICE", "BUY", "SELL"], fontsize=12)
+            ax2.grid()
+            plt.show()
+            
 
     def _next_observation(self) -> np.array:
         market_states_observation = self._get_observation_market_states()
-        if market_states_observation.shape[0] == self.window_size:
-
-            if self.current_step != self.window_size:
-                self._update_observation_agent_states()
-
-            observation = np.append(market_states_observation, self.observation_agent_states, axis=1)
-
-        else:
-            observation = None
+        self._update_observation_agent_states()
+        observation = np.append(market_states_observation, self.observation_agent_states, axis=1)
 
         return observation

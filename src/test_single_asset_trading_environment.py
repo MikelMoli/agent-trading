@@ -48,18 +48,16 @@ if __name__ == "__main__":
 
     total_reward = 0
     terminated = False
-    for epoch in range(epochs):
-        print(f"EPOCH={epoch}\n")
-        for episode in range(episodes_per_epoch):
-            action = env.action_space.sample()
-            new_obs, reward, terminated, _, _ = env.step(action)
-            total_reward += reward
+    for episode in range(episodes_per_epoch):
+        action = env.action_space.sample()
+        new_obs, reward, terminated, _, _ = env.step(action)
+        total_reward += reward
 
-            if episode % 1000 == 0:
-                print(f"EPISODE={episode}")
-                env.render()
-            
-            if terminated:
-                break
+        if episode % 1000 == 0 and episode != 0:
+            print(f"EPISODE={episode}")
+            env.render(mode="console")
         
-        env.reset()
+        if terminated:
+            break
+    
+    env.reset()

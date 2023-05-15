@@ -2,3 +2,6 @@
 __pycache__/
 venv/
 NUL
+.ipynb_checkpoints/
+checkpoints/
+data/
