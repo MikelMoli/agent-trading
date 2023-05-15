@@ -26,7 +26,7 @@ class SingleAssetTradingEnvironment(gym.Env):
             "HOLD": 2
         }
 
-        self.df = pd.read_csv(config["data_path"])[["open","high","close","low"]]
+        self.df = pd.read_csv(config["data_path"])[["open","high","close","low", "volume"]]
         self.initial_account_balance = config["initial_account_balance"]
         self.current_account_balance = config["initial_account_balance"]
         self.unavailable_action_penalization_reward = config["unavailable_action_penalization_reward"]
@@ -84,7 +84,8 @@ class SingleAssetTradingEnvironment(gym.Env):
             self.df.loc[self.current_step, "open"],
             self.df.loc[self.current_step, "high"],
             self.df.loc[self.current_step, "low"],
-            self.df.loc[self.current_step, "close"]
+            self.df.loc[self.current_step, "close"],
+            self.df.loc[self.current_step, "volume"]
         ])
 
         return market_states / self.normalization_factor
@@ -139,6 +140,7 @@ class SingleAssetTradingEnvironment(gym.Env):
             "AGENT ACTION": get_action_name(self.current_action),
             "STEP": self.current_step
         }
+        print(info)
 
         return observation, self.timestamp_reward, done, info
 
