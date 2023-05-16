@@ -11,4 +11,4 @@ class SimpleProfitReward(Reward):
         current_account_balance = account_balance_history[-1]
         min_account_balance_in_window = account_balance_history[-min(len(account_balance_history), self.window)]
         
-        return current_account_balance / min_account_balance_in_window - 1.0
+        return (current_account_balance / min_account_balance_in_window) - 1.0

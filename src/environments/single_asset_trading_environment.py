@@ -62,10 +62,10 @@ class SingleAssetTradingEnvironment(gym.Env):
     
     def _define_observation_space(self) -> gym.spaces.Box:
         low_agent_state = np.array([0, 0, -np.inf]) #position, action and account balance low observations
-        low_market_state = np.array([-np.inf for _ in range(self.df.shape[1])]) #low for all asset features for window size + current position timesteps
+        low_market_state = np.array([-np.inf for _ in range(self.df.shape[1])]) #low for all asset features
 
         high_agent_state = np.array([2, 2, np.inf]) #position, action and account balance high observations
-        high_market_state = np.array([np.inf for _ in range(self.df.shape[1])]) #high for all asset features for window size + current position timesteps
+        high_market_state = np.array([np.inf for _ in range(self.df.shape[1])]) #high for all asset features
 
         low_bound_observation_space = np.concatenate((low_market_state, low_agent_state)) #concatenate low agent state and low market state arrays
         high_bound_observation_space = np.concatenate((high_market_state, high_agent_state)) #concatenate high agent state and low market state arrays
@@ -92,12 +92,16 @@ class SingleAssetTradingEnvironment(gym.Env):
     
     def _calculate_reward(self) -> float:
         if len(self.trading_history["ACCOUNT_BALANCE"]) > 1:
-            if self.current_position == 0 and self.current_action == 0:
+            if self.current_position == 0 and self.current_action == 0: #if position LONG and action BUY (IS FORBIDDEN)
+                print("FORBIDDEN ACTION...")
                 return self.unavailable_action_penalization_reward
-            elif self.current_position == 1 and self.current_action == 1:
+            elif self.current_position == 1 and self.current_action == 0: #if position SHORT and action BUY (IS FORBIDDEN)
+                print("FORBIDDEN ACTION...")
                 return self.unavailable_action_penalization_reward
-            else:
+            elif (self.current_position == 0 or self.current_position == 1) and self.current_action == 1: #if position LONG or SHORT and action SELL
                 return self.reward_generator.calculate_reward(self.trading_history["ACCOUNT_BALANCE"])
+            else:
+                return 0.0
         else:
             return 0.0
         

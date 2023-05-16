@@ -13,7 +13,7 @@ if __name__ == "__main__":
 
     data_path = os.path.abspath("../data/merged/complete_data_1H.csv")
     initial_account_balance = 10000
-    reward_window = 12
+    reward_window = 24
     reward_method = "simple-profit"
     unavailable_action_penalization_reward = -1
 

@@ -34,10 +34,10 @@ class SingleAssetDiscreteFullAction(Action):
                 price_pct_change = (trading_history["PRICE"][-1] - current_price) / trading_history["PRICE"][-1]
 
                 if action == 0: #BUY
+                    pass
+                elif action == 1: #SELL
                     account_balance *= (1 - price_pct_change) * (1 - self.trade_commission)
                     current_position = 2 #FLAT
-                elif action == 1: #SELL
-                    pass
                 elif action == 2: #HOLD
                     account_balance *= (1 + price_pct_change)
 
